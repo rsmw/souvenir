@@ -1,0 +1,52 @@
+-- This is a line comment
+
+on #example { ... } if not $seen_example
+    -> init
+;;
+
+:: init
+
+music "sound/wwwfih_pianosolo_combined.ogg"
+
+> You sit alone in the bar for hours with nothing to do but wait. Some idiot comes in already sloshed, breathing cheap vodka at you from across the room. It's Leichensack. You don't even have to look. He wads himself up into the seat next to yours.
+
+> "Your ship has a gun now," he growls, without prelude. The bartender slides him a glass of water for the gravel in his throat. "It won't do you good. Word of advice from a veteran. Get out."
+
+menu
+| > "I don't want your advice."
+-> no_advice
+
+| > Deck him.
+-> tell_him_off
+
+;;
+
+:: no_advice
+
+> "I don't need advice on flying ships from someone with a lifetime ban from flying ships."
+
+> "It's advice on staying alive. Sector's getting hot. You fly out there, you die in combat."
+
+> "What, you want me to lay low?"
+
+> "I said get out. Quit. Retire."
+
+> "And be what? A fucking florist?"
+
+> He laughs a little. Or starts to vomit. In his case it's a distinction without a difference.
+
+> You leave the bar. Nowhere else to go but back to your ship.
+
+return
+
+:: tell_him_off
+
+> "Get FUCKED, you pickled shitstain!" You spill your drink and backhand him across the face. He spins and falls off his stool, facedown in his greasy hair. Then he vomits. You fight the urge to kick his teeth out. He'd bleed on your boots.
+
+> "Fall in a gravity well your own damn self and die eating clown ass. You're not taking ME down with you."
+
+> "I'm trying to save your life," he manages.
+
+> "Save yourself first next time." You chuck some coins at the bartender and storm out, with nowhere else to go but back to your ship.
+
+return
