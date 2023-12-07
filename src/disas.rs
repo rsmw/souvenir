@@ -207,3 +207,37 @@ fn if_then() {
 
     println!("OK");
 }
+
+#[test]
+fn beer() {
+    let src = r#"
+    -- Quick example: 99 Bottles of Beer
+
+    $count = 99
+
+    :: verse
+    > {$count} bottles of beer on the wall
+    > {$count} bottles of beer
+    > Take one down
+    > Pass it around
+
+    $count -= 1
+    if $count ?= 0
+        > No more bottles of beer on the wall
+        bye
+    else
+        > {$count} bottles of beer on the wall
+        >
+    ;;
+
+    -> verse
+    "#;
+
+    let script = crate::parse(src).unwrap();
+    eprintln!("{script:#?}\n\n\n");
+
+    let script = script.compile().unwrap();
+    println!("{script}\n\n\n");
+
+    println!("OK");
+}
