@@ -401,7 +401,14 @@ impl<'src, I: Iterator<Item=Token<'src>>> Parser<'src, I> {
                     self.input.next();
                 },
 
-                Tok::GlobalName(_) | Tok::Ident(_) => {
+                | Tok::KwdNot
+                | Tok::Minus
+                | Tok::ParenOpen
+                | Tok::Atom(_)
+                | Tok::LitInt(_)
+                | Tok::LitString(_)
+                | Tok::GlobalName(_)
+                | Tok::Ident(_) => {
                     let expr = self.parse_expr(0)?;
 
                     match self.input.peek().map(|t| &t.kind) {
