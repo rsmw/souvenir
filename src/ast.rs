@@ -946,8 +946,12 @@ impl<L> Expr<L> {
             Int { value } => Int { value },
             String { value } => String { value },
 
-            FnCall { .. } => {
-                bail!("Unimplemented: Function calls in expressions");
+            FnCall { lhs, args } => {
+                let lhs = lhs.map_locals(f)?.into();
+                let args = args.into_iter().map(|arg| {
+                    arg.map_locals(f)
+                }).collect::<Result<Vec<_>>>()?;
+                FnCall { lhs, args }
             },
         })
     }
