@@ -353,6 +353,10 @@ impl Actor {
             }
         }
 
+        let ActorStatus::Running = self.status() else {
+            return;
+        };
+
         // Resume the topmost task if ready.
         if let Err(error) = self.resume() {
             let error = format!("{error:#?}");
