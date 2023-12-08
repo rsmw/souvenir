@@ -256,9 +256,20 @@ impl Compiler {
             })?;
         }
 
-        let body = self.body;
+        let body = self.body.into();
+        let pages = self.pages.into_iter().map(|(name, info)| {
+            use crate::interpret;
 
-        Ok(Script { body: body.into() })
+            let entry_point = self.known_labels[&info.entry_point];
+            let params = info.params.into();
+
+            (name, interpret::PageInfo {
+                entry_point,
+                params,
+            })
+        }).collect();
+
+        Ok(Script { body, pages })
     }
 
     /// Translate the body of a nested scope that is evaluated immediately.

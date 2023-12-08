@@ -36,6 +36,12 @@ impl fmt::Display for Script {
         for (index, op) in self.body.as_ref().iter().enumerate() {
             let label = TaskLabel(index);
 
+            for (name, info) in self.pages.iter() {
+                if info.entry_point == label {
+                    writeln!(f, "{name}:")?;
+                }
+            }
+
             if used_labels.contains(&label) || index == 0 {
                 writeln!(f, "{label}:")?;
             }

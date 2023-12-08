@@ -55,9 +55,19 @@ pub struct Actor {
 /// Compiled script.
 #[derive(Debug)]
 pub struct Script {
+    pub(crate) pages: HashMap<Arc<str>, PageInfo>,
+
     /// Stores all opcodes in a single linear array.
     /// `TaskLabel` is an index into this array.
     pub(crate) body: Arc<[Op]>,
+}
+
+#[derive(Debug)]
+pub struct PageInfo {
+    pub(crate) entry_point: TaskLabel,
+
+    #[allow(unused)]
+    pub(crate) params: Arc<[Arc<str>]>,
 }
 
 /// Target of a jump within a script body.
@@ -868,7 +878,9 @@ mod dsl {
 
     impl From<Vec<Op>> for Script {
         fn from(value: Vec<Op>) -> Self {
-            Script { body: value.into() }
+            let body = value.into();
+            let pages = HashMap::new();
+            Script { body, pages }
         }
     }
 }
