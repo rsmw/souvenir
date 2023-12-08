@@ -823,6 +823,9 @@ impl Actor {
                             // Call tasks.push() below, but stop execution
                             break;
                         };
+
+                        // Skip pc increment
+                        continue;
                     } else {
                         // Time to hibernate
                         // Skip the call to tasks.push()
