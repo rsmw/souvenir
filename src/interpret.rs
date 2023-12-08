@@ -771,17 +771,37 @@ impl Actor {
                         self.heap.eval(expr, task.env)
                     }).collect::<Result<Vec<Value>>>()?;
 
-                    self.liveness = ActorLiveness::Loading {
-                        path,
-                        args,
-                    };
-
                     // Prevent all pending tasks from completing IO reqs
                     self.tasks.clear();
 
                     // Ignore all messages until new script is loaded
                     self.handlers.clear();
 
+                    if let Some(page) = self.script.pages.get(&path) {
+                        // Page is in currently loaded script; call it directly
+
+                        if page.params.len() > 0 {
+                            bail!("Not yet implemented: Page arguments");
+                        }
+
+                        // TODO: Keep locals and handlers set during script header
+
+                        let env = self.heap.create();
+
+                        self.tasks.push(Task {
+                            pc: page.entry_point.0,
+                            status: TaskStatus::Ready,
+                            env,
+                        });
+
+                    } else {
+                        self.liveness = ActorLiveness::Loading {
+                            path,
+                            args,
+                        };
+                    }
+
+                    // Drop current task and yield to host
                     return Ok(());
                 },
 
