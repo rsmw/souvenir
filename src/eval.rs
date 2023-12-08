@@ -415,6 +415,20 @@ impl LocalEnv {
     }
 }
 
+impl GlobalHandle {
+    pub fn with_values(values: &[(&str, Value)]) -> Result<Self> {
+        let mut bindings = HashMap::default();
+
+        for (name, value) in values.iter().cloned() {
+            let value = GlobalValue::try_from(value)?;
+            bindings.insert(name.into(), value);
+        }
+
+        let env = GlobalEnv { bindings };
+        Ok(Self(Arc::new(env.into())))
+    }
+}
+
 impl TryFrom<Value> for GlobalValue {
     type Error = anyhow::Error;
 
@@ -472,17 +486,6 @@ pub mod dsl {
         Expr::Global { name }
     }
 
-    pub fn init_globals(vars: &[(&str, Value)]) -> GlobalHandle {
-        let mut bindings = HashMap::default();
-
-        for (name, value) in vars.iter().cloned() {
-            let value = GlobalValue::try_from(value).unwrap();
-            bindings.insert(name.into(), value);
-        }
-
-        GlobalHandle(Arc::new(RwLock::new(GlobalEnv { bindings })))
-    }
-
     impl From<u32> for Expr {
         fn from(value: u32) -> Self {
             Expr::Int { value }
@@ -500,7 +503,7 @@ pub mod dsl {
 fn hello_world() {
     use dsl::*;
 
-    let globals = init_globals(&[("ONE", Value::Int(3))]);
+    let globals = GlobalHandle::with_values(&[("ONE", Value::Int(3))]).unwrap();
 
     let mut heap = EnvHeap::with_globals(globals.clone());
 
@@ -542,7 +545,7 @@ fn compare_ints() {
         infix(Binop::Less, 2, 3)
     };
 
-    let globals = init_globals(&[]);
+    let globals = GlobalHandle::with_values(&[]).unwrap();
     let mut heap = EnvHeap::with_globals(globals);
     let locals = heap.create();
 

@@ -889,11 +889,11 @@ mod dsl {
 fn two_plus_two() {
     use dsl::*;
 
-    let globals = init_globals(&[
+    let globals = GlobalHandle::with_values(&[
         ("ONE", Value::Int(1)),
         ("TWO", Value::Int(2)),
         ("BAR", Value::Int(0)),
-    ]);
+    ]).unwrap();
 
     let mut actor = Actor::from_script(Arc::new({
         vec![ 
@@ -937,7 +937,7 @@ fn eval_stitch() {
         }),
     ].into());
     
-    let globals = init_globals(&[]);
+    let globals = GlobalHandle::with_values(&[]).unwrap();
     let mut actor = Actor::from_script(script, globals);
 
     actor.resume().unwrap();
@@ -956,7 +956,7 @@ fn eval_stitch() {
 fn ffi_meet_and_greet() {
     use dsl::*;
 
-    let globals = init_globals(&[]);
+    let globals = GlobalHandle::with_values(&[]).unwrap();
 
     let mut actor = Actor::from_script(Arc::new(vec![
         let_local("Neighbor", Expr::FnCall {
@@ -993,8 +993,6 @@ fn ffi_meet_and_greet() {
 
 #[test]
 fn menu_single() {
-    use dsl::*;
-
     let script: Script = vec![
         Op::Menu {
             choices: vec![
@@ -1013,7 +1011,7 @@ fn menu_single() {
         Op::Retire,
     ].into();
 
-    let globals = init_globals(&[]);
+    let globals = GlobalHandle::with_values(&[]).unwrap();
 
     let mut actor = Actor::from_script(script.into(), globals);
 
@@ -1064,7 +1062,7 @@ fn menu_multiple() {
         }),
     ].into();
 
-    let globals = init_globals(&[]);
+    let globals = GlobalHandle::with_values(&[]).unwrap();
 
     let mut actor = Actor::from_script(Arc::new(script), globals);
 
