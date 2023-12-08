@@ -421,7 +421,7 @@ impl Actor {
                     return Ok(false);
                 }
 
-                let IoPayload::HostFfi { .. } = req.payload else {
+                let (IoPayload::Quote { .. } | IoPayload::HostFfi { .. }) = req.payload else {
                     return Ok(false)
                 };
 
@@ -430,10 +430,18 @@ impl Actor {
                 task.status = TaskStatus::Ready;
             },
 
-            _ => (),
+            TaskStatus::Ready | TaskStatus::Sleeping { .. } => {
+                return Ok(false);
+            },
         }
 
         if top {
+            // Check should be redundant because we set it above
+            // Put this here anyway so we can set a breakpoint
+            let TaskStatus::Ready = task.status else {
+                return Ok(true);
+            };
+
             if let Err(err) = self.resume() {
                 let error = format!("{}", &err);
                 self.liveness = ActorLiveness::Killed { error };
@@ -745,7 +753,7 @@ impl Actor {
 
                     task.status = TaskStatus::AwaitFfi {
                         dst: Placement::Discard,
-                        secret: 0,
+                        secret,
                     };
 
                     task.pc += next_jump;
