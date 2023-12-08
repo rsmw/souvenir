@@ -58,6 +58,17 @@ impl TryFrom<Value> for usize {
     }
 }
 
+impl<'a> TryFrom<&'a Value> for &'a str {
+    type Error = anyhow::Error;
+
+    fn try_from(value: &'a Value) -> Result<Self> {
+        Ok(match value {
+            Value::String(s) => s.as_str(),
+            other => bail!("Can't borrow {other:?} as a string"),
+        })
+    }
+}
+
 impl TryFrom<Value> for String {
     type Error = anyhow::Error;
 
