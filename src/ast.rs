@@ -309,6 +309,11 @@ impl<'src, I: Iterator<Item=Token<'src>>> Parser<'src, I> {
         let mut header = Vec::<Decl>::new();
         while let Some(tok) = self.input.peek() {
             let decl = match tok.kind {
+                Tok::LineBreak => {
+                    self.expect_token()?;
+                    continue;
+                },
+
                 Tok::KwdGlobal => {
                     self.expect_token()?;
 
