@@ -218,26 +218,45 @@ fn if_then() {
 #[test]
 fn beer() {
     let src = r#"
-    -- Quick example: 99 Bottles of Beer
+    -- Print the lyrics of 99 Bottles of Beer
 
+    global $count
     $count = 99
 
     :: verse
-    > {$count} bottles of beer on the wall
-    > {$count} bottles of beer
+
+    -- Local variables are declared before use
+    let S = "s"
+    if $count ?= 1
+        S = ""
+    ;;
+
+    > {$count} bottle{S} of beer on the wall
+    > {$count} bottle{S} of beer
     > Take one down
     > Pass it around
 
     $count -= 1
-    if $count ?= 0
-        > No more bottles of beer on the wall
-        bye
+
+    if $count ?= 1
+        S = ""
     else
-        > {$count} bottles of beer on the wall
-        >
+        S = "s"
     ;;
 
-    -> verse
+    let Count = $count
+    if Count ?= 0
+        Count = "No more"
+    ;;
+
+    > {Count} bottle{S} of beer on the wall
+    >
+
+    if not ($count ?= 0)
+        -> verse
+    ;;
+
+    bye
     "#;
 
     let script = crate::parse(src).unwrap();
