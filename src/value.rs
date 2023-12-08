@@ -52,7 +52,7 @@ impl TryFrom<Value> for usize {
 
     fn try_from(value: Value) -> Result<Self> {
         Ok(match value {
-            Value::Int(n) if n > 0 => n as usize,
+            Value::Int(n) if n >= 0 => n as usize,
             other => bail!("Can't convert {other:?} to usize"),
         })
     }
