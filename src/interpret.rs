@@ -1,6 +1,6 @@
 //! Core interpreter module. Handles evaluation for one actor. Current
 //! architecture revolves around async scheduling.
-//! 
+//!
 //! Lexical environments are dynamically managed and allocated, replacing prior
 //! attempts to allocate them statically. This is slower, but removes numerous
 //! corner cases that broke in earlier implementations.
@@ -22,7 +22,7 @@ use crate::value::{ActorRef, Value};
 /// state necessary for evaluating expressions and handling incoming messages.
 /// The host environment is responsible for passing messages between Actors,
 /// fulfilling FFI calls, and all other system IO.
-/// 
+///
 /// Internally, the state of an ongoing computation is represented by a `Task`
 /// and kept in a FILO stack. When an Actor is prompted to continue by the
 /// `tick` method, only the topmost task will run, and only if it is not waiting
@@ -75,7 +75,7 @@ pub struct PageInfo {
 pub struct TaskLabel(pub(crate) usize);
 
 /// Represents an in-progress IO request for the host environment.
-/// 
+///
 /// **WARNING:** Must not implement Copy or Clone.
 #[derive(Debug)]
 pub struct IoReq {
@@ -110,7 +110,7 @@ pub enum IoPayload {
 }
 
 /// Flattened instruction format.
-/// 
+///
 /// Includes instructions that perform control flow. The basic block model does
 /// not work here. I tried.
 #[derive(Clone, Debug)]
@@ -928,7 +928,7 @@ fn two_plus_two() {
     ]).unwrap();
 
     let mut actor = Actor::from_script(Arc::new({
-        vec![ 
+        vec![
             let_local("Four", add(global("TWO"), global("TWO"))),
             let_local("Bar", local("Four")),
             mut_local("Bar", sub(local("Four"), 2)),
@@ -968,7 +968,7 @@ fn eval_stitch() {
             ],
         }),
     ].into());
-    
+
     let globals = GlobalHandle::with_values(&[]).unwrap();
     let mut actor = Actor::from_script(script, globals);
 
