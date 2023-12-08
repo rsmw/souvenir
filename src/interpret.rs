@@ -111,9 +111,10 @@ pub enum Op {
         dst: Placement,
     },
 
-    /// Immediately call a label as a Task.
-    CallLabel {
-        label: TaskLabel,
+    /// Execute the next instruction in a child Task and jump forward by the
+    /// specified offset.
+    EnterBlock {
+        offset: usize,
     },
 
     /// Install a message handler. See `Actor::handle_message`.
@@ -135,8 +136,8 @@ pub enum Op {
 
     // Listen -- replaced with PushHandler { cancel: true, .. }
 
-    /// Evaluate `guard`; if truthy, jump by `offset`. Always jumps foward.
-    Jnz {
+    /// Evaluate `guard`; if not truthy, jump by `offset`. Always jumps forward.
+    Jz {
         guard: Arc<Expr>,
         offset: usize,
     },
@@ -603,14 +604,16 @@ impl Actor {
                     self.heap.ctx_mut(&mut task.env).bind(dst.clone(), value)?;
                 },
 
-                &Op::CallLabel { label } => {
+                &Op::EnterBlock { offset } => {
                     let parent = task.env;
+                    let pc = task.pc;
+                    task.pc += offset;
 
                     self.tasks.push(task);
 
                     task = Task {
+                        pc, // Will be incremented by next_jump
                         env: self.heap.create_child(parent),
-                        pc: label.0,
                         status: TaskStatus::Ready,
                     };
                 },
@@ -644,8 +647,8 @@ impl Actor {
                     }
                 },
 
-                &Op::Jnz { ref guard, offset } => {
-                    if self.heap.eval(guard, task.env)?.is_truthy() {
+                &Op::Jz { ref guard, offset } => {
+                    if !self.heap.eval(guard, task.env)?.is_truthy() {
                         next_jump = offset;
                     }
                 },

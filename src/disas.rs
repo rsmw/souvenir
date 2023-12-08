@@ -11,13 +11,13 @@ impl fmt::Display for Script {
 
         for (index, op) in self.body.as_ref().iter().enumerate() {
             match op {
-                &Op::CallLabel { label } |
                 &Op::CancelHandler { label } |
                 &Op::PushHandler { label, .. } => {
                     used_labels.insert(label);
                 },
 
-                &Op::Jnz { offset, .. } |
+                &Op::EnterBlock { offset } |
+                &Op::Jz { offset, .. } |
                 &Op::Jump { offset } => {
                     let label = TaskLabel(index + offset);
                     used_labels.insert(label);
@@ -47,8 +47,9 @@ impl fmt::Display for Script {
                     writeln!(f, "Eval ({dst:?}) = {expr}")?;
                 },
 
-                Op::CallLabel { label } => {
-                    writeln!(f, "CallLabel {label}")?;
+                Op::EnterBlock { offset } => {
+                    let target = TaskLabel(index + offset);
+                    writeln!(f, "EnterBlock until {target}")?;
                 },
 
                 Op::PushHandler { pattern, label, cancel } => {
@@ -60,9 +61,9 @@ impl fmt::Display for Script {
                     writeln!(f, "CancelHandler {label}")?;
                 },
 
-                Op::Jnz { guard, offset } => {
+                Op::Jz { guard, offset } => {
                     let target = TaskLabel(index + offset);
-                    writeln!(f, "Jnz {target} if {guard}")?;
+                    writeln!(f, "Jz {target} unless {guard}")?;
                 },
 
                 Op::Jump { offset } => {

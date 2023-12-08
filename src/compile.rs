@@ -182,8 +182,9 @@ impl Compiler {
 
         for index in fixups {
             match &mut body[index] {
+                Op::EnterBlock { offset } |
                 Op::Jump { offset } |
-                Op::Jnz { offset, .. } => {
+                Op::Jz { offset, .. } => {
                     // Target is encoded as offset
                     // Check validity first
                     if *offset < LabelId::MAGIC {
@@ -234,15 +235,15 @@ impl Compiler {
         let body_len = self.body.len();
 
         for (index, op) in self.body.iter_mut().enumerate() {
-            if let Op::Jump { offset } | Op::Jnz { offset, .. } = op {
+            op.visit_offsets(|offset| {
                 let target = index + *offset;
 
                 if target > body_len {
                     warn!("Offset {offset} jumps outside script body");
                 }
 
-                continue;
-            }
+                Ok(())
+            })?;
 
             op.visit_labels(|label| {
                 if label.0 >= LabelId::MAGIC {
@@ -260,21 +261,33 @@ impl Compiler {
         Ok(Script { body: body.into() })
     }
 
-    fn in_block<T>(&mut self, start: LabelId, f: impl FnOnce(&mut Self) -> Result<T>) -> Result<T> {
+    /// Translate the body of a nested scope that is evaluated immediately.
+    fn in_block(&mut self, f: impl FnOnce(&mut Self) -> Result<()>) -> Result<()> {
         let after = self.alloc_label();
 
-        let label = self.use_label(start)?;
-        self.emit(Op::CallLabel { label })?;
-
         let offset = self.jump_to(after)?;
-        self.emit(Op::Jump { offset })?;
+        self.emit(Op::EnterBlock { offset })?;
 
-        self.define_label(start)?;
         let t = f(self)?;
         self.emit(Op::Return)?;
 
         self.define_label(after)?;
         Ok(t)
+    }
+
+    /// Translate the body of a callback with a specified label.
+    fn in_callback(&mut self, start: LabelId, f: impl FnOnce(&mut Self) -> Result<()>) -> Result<()> {
+        let after = self.alloc_label();
+
+        let offset = self.jump_to(after)?;
+        self.emit(Op::Jump { offset })?;
+
+        self.define_label(start)?;
+        f(self)?;
+        self.emit(Op::Return)?;
+
+        self.define_label(after)?;
+        Ok(())
     }
 
     fn bind_local(&mut self, name: &str) {
@@ -312,30 +325,32 @@ impl Compiler {
                 let exit = self.alloc_label();
 
                 for ast::IfThen { guard, body } in cases {
-                    let then = self.alloc_label();
+                    let or_else = self.alloc_label();
 
                     let guard = self.tr_expr(guard)?.into();
-                    let offset = self.jump_to(then)?;
-                    self.emit(Op::Jnz { guard, offset })?;
+                    let offset = self.jump_to(or_else)?;
+                    self.emit(Op::Jz { guard, offset })?;
 
-                    self.in_block(then, |this| {
+                    self.in_block(|this| {
                         for stmt in body {
                             this.tr_stmt(stmt)?;
                         }
 
-                        let offset = this.jump_to(exit)?;
-                        this.emit(Op::Jump { offset })
+                        Ok(())
                     })?;
+
+                    let offset = self.jump_to(exit)?;
+                    self.emit(Op::Jump { offset })?;
+
+                    self.define_label(or_else)?;
                 }
 
-                let or_else = self.alloc_label();
-                self.in_block(or_else, |this| {
+                self.in_block(|this| {
                     for stmt in fallback {
                         this.tr_stmt(stmt)?;
                     }
 
-                    let offset = this.jump_to(exit)?;
-                    this.emit(Op::Jump { offset })
+                    Ok(())
                 })?;
 
                 self.define_label(exit)?;
@@ -377,26 +392,22 @@ impl Compiler {
             },
 
             ast::Stmt::On { pattern, body } => {
-                let label = self.alloc_label();
+                let pattern = self.tr_pattern(pattern)?;
+                let handler_body = self.alloc_label();
 
-                let pattern = self.in_block(label, |this| {
-                    let pattern = this.tr_pattern(pattern)?;
-
-                    for stmt in body {
-                        this.tr_stmt(stmt)?;
-                    }
-
-                    this.emit(Op::Return)?;
-
-                    Ok(pattern)
-                })?;
-
-                let label = self.use_label(label)?;
-
+                let label = self.use_label(handler_body)?;
                 self.emit(Op::PushHandler {
                     pattern,
                     cancel: false,
                     label,
+                })?;
+
+                self.in_callback(handler_body, |this| {
+                    for stmt in body {
+                        this.tr_stmt(stmt)?;
+                    }
+
+                    Ok(())
                 })?;
             },
 
@@ -429,7 +440,7 @@ impl Compiler {
                 self.emit(Op::Menu { choices })?;
 
                 for (pc, actions) in bodies {
-                    self.in_block(pc, |this| {
+                    self.in_callback(pc, |this| {
                         for stmt in actions {
                             this.tr_stmt(stmt)?;
                         }
@@ -573,10 +584,6 @@ impl Op {
     /// Convenience method for performing fixups
     fn visit_labels(&mut self, mut f: impl FnMut(&mut TaskLabel) -> Result<()>) -> Result<()> {
         match self {
-            Op::CallLabel { label } => {
-                f(label)
-            },
-
             Op::PushHandler { label, .. } => {
                 f(label)
             },
@@ -599,7 +606,8 @@ impl Op {
                 Ok(())
             },
 
-            Op::Jnz { .. } |
+            Op::EnterBlock { .. } |
+            Op::Jz { .. } |
             Op::Jump { .. } |
             Op::Quote { .. } |
             Op::Tailcall { .. } |
@@ -609,6 +617,18 @@ impl Op {
             Op::Return |
             Op::Retire |
             Op::Hcf { .. } => Ok(()),
+        }
+    }
+
+    fn visit_offsets(&mut self, mut f: impl FnMut(&mut usize) -> Result<()>) -> Result<()> {
+        match self {
+            Op::EnterBlock { offset } |
+            Op::Jz { offset, .. } |
+            Op::Jump { offset } => {
+                f(offset)
+            },
+
+            _ => Ok(()),
         }
     }
 }
