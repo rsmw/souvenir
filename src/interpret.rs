@@ -1116,3 +1116,73 @@ fn menu_multiple() {
     assert_eq!(fn_name.as_ref(), "hold");
     assert_eq!(args.as_slice(), &[Value::String("hands".into())]);
 }
+
+#[test]
+fn nested() {
+    let src = r#"
+    > Begin setup
+    $count = 3
+    if 1 ?> 0
+        > Begin nested 1
+        > End nested 1
+    ;;
+    > End setup
+    -> jump_target
+    bye
+
+    :: jump_target
+
+    > Jumped to target
+    if $count ?> 0
+        > $count is greater than zero
+        $count -= 1
+        > Decremented $count to {$count}
+        -> jump_target
+    else
+        > Else
+    ;;
+    > End of jump_target
+    bye
+    "#;
+
+    let output = r#"Begin setup
+    Begin nested 1
+    End nested 1
+    End setup
+    Jumped to target
+    $count is greater than zero
+    Decremented $count to 2
+    Jumped to target
+    $count is greater than zero
+    Decremented $count to 1
+    Jumped to target
+    $count is greater than zero
+    Decremented $count to 0
+    Jumped to target
+    Else
+    End of jump_target"#;
+
+    let script = crate::parse(src).unwrap().compile().unwrap();
+
+    let globals = GlobalHandle::with_values(&[
+        ("count", Value::Int(9000)),
+    ]).unwrap();
+
+    let mut actor = Actor::from_script(script.into(), globals);
+
+    for expected in output.lines() {
+        actor.tick(Duration::from_millis(1000));
+
+        let io = actor.poll_io().unwrap();
+
+        let IoPayload::Quote { speaker, line } = io.payload() else {
+            panic!("Unexpected IO request: {io:?}");
+        };
+
+        assert!(speaker.is_none());
+        assert_eq!(expected.trim(), line.as_str());
+        assert!(actor.fulfill(io, Value::TRUE).unwrap());
+    }
+
+    assert!(!actor.is_alive());
+}
