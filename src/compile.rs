@@ -37,6 +37,9 @@ pub(crate) struct Compiler {
 
     next_label: LabelId,
 
+    /// Depth of the Task stack at this point in translation
+    depth: usize,
+
     continue_target: ContinueTarget,
 }
 
@@ -192,7 +195,7 @@ impl Compiler {
 
         for index in fixups {
             match &mut body[index] {
-                Op::EnterBlock { offset } |
+                Op::Enter { offset } |
                 Op::Jump { offset } |
                 Op::Jz { offset, .. } => {
                     // Target is encoded as offset
@@ -289,10 +292,13 @@ impl Compiler {
         let after = self.alloc_label();
 
         let offset = self.jump_to(after)?;
-        self.emit(Op::EnterBlock { offset })?;
+        self.emit(Op::Enter { offset })?;
+        self.depth += 1;
 
         let t = f(self)?;
-        self.emit(Op::Return)?;
+
+        self.depth -= 1;
+        self.emit(Op::Leave { depth: 0 })?;
 
         self.define_label(after)?;
         Ok(t)
@@ -305,9 +311,17 @@ impl Compiler {
         let offset = self.jump_to(after)?;
         self.emit(Op::Jump { offset })?;
 
+        // Save depth of enclosing scope
+        let depth = self.depth;
+        self.depth = 0;
+
         self.define_label(start)?;
         f(self)?;
-        self.emit(Op::Return)?;
+        // Implicit Leave at scope end; depth is always zero
+        self.emit(Op::Leave { depth: 0 })?;
+
+        // Restore depth
+        self.depth = depth;
 
         self.define_label(after)?;
         Ok(())
@@ -438,7 +452,7 @@ impl Compiler {
                 let label = TaskLabel(0);
                 let pattern = self.tr_pattern(pattern)?;
                 self.emit(Op::PushHandler { pattern, label, cancel: true })?;
-                self.emit(Op::Return)?;
+                self.emit(Op::Hibernate)?;
                 // TODO: Fixup
             },
 
@@ -537,11 +551,13 @@ impl Compiler {
             },
 
             ast::Stmt::Hibernate => {
-                self.emit(Op::Return)?;
+                self.emit(Op::Hibernate)?;
             },
 
             ast::Stmt::Return => {
-                self.emit(Op::Return)?;
+                // Explicit return; actually use saved depth
+                let depth = self.depth;
+                self.emit(Op::Leave { depth })?;
             },
 
             ast::Stmt::Bye => {
@@ -629,23 +645,24 @@ impl Op {
                 Ok(())
             },
 
-            Op::EnterBlock { .. } |
-            Op::Jz { .. } |
-            Op::Jump { .. } |
-            Op::Quote { .. } |
-            Op::Tailcall { .. } |
-            Op::Trace { .. } |
-            Op::Eval { .. } |
-            Op::Wait { .. } |
-            Op::Return |
-            Op::Retire |
-            Op::Hcf { .. } => Ok(()),
+            | Op::Enter { .. }
+            | Op::Leave { .. }
+            | Op::Jz { .. }
+            | Op::Jump { .. }
+            | Op::Quote { .. }
+            | Op::Tailcall { .. }
+            | Op::Trace { .. }
+            | Op::Eval { .. }
+            | Op::Wait { .. }
+            | Op::Hibernate
+            | Op::Retire
+            | Op::Hcf { .. } => Ok(()),
         }
     }
 
     fn visit_offsets(&mut self, mut f: impl FnMut(&mut usize) -> Result<()>) -> Result<()> {
         match self {
-            Op::EnterBlock { offset } |
+            Op::Enter { offset } |
             Op::Jz { offset, .. } |
             Op::Jump { offset } => {
                 f(offset)

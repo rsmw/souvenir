@@ -125,8 +125,21 @@ pub enum Op {
 
     /// Execute the next instruction in a child Task and jump forward by the
     /// specified offset.
-    EnterBlock {
+    ///
+    /// Counterpart of `Leave`.
+    Enter {
         offset: usize,
+    },
+
+    /// Pop the current Task and `depth` additional Tasks from the stack. If
+    /// there is a Task remaining with a status of Ready, resume execution.
+    ///
+    /// `Leave { depth: 0 }` exits the current scope; higher counts are for
+    /// early returns.
+    ///
+    /// Counterpart of `Enter`.
+    Leave {
+        depth: usize,
     },
 
     /// Install a message handler. See `Actor::handle_message`.
@@ -189,8 +202,11 @@ pub enum Op {
         amount: Arc<Expr>,
     },
 
-    /// End this Task and resume execution of the next one, if ready.
-    Return,
+    /// Clear the entire task stack and halt execution.
+    ///
+    /// Weaker than `Retire`, because handlers are left in place. An Actor may
+    /// wake up again after receiving a message.
+    Hibernate,
 
     /// Shut down this actor
     Retire,
@@ -579,8 +595,8 @@ impl Actor {
         // This allows a blocked task to remain in the stack until
         // the host has replied with `fulfill()`
         loop {
-            // Return by default; rely on correct handling below for cleanup
-            let op = self.script.body.get(task.pc).unwrap_or(&Op::Return);
+            // Hibernate by default; rely on correct handling below for cleanup
+            let op = self.script.body.get(task.pc).unwrap_or(&Op::Hibernate);
 
             if self.trace {
                 debug!("Next instruction: {op:#?}");
@@ -628,7 +644,7 @@ impl Actor {
                     self.heap.ctx_mut(&mut task.env).bind(dst.clone(), value)?;
                 },
 
-                &Op::EnterBlock { offset } => {
+                &Op::Enter { offset } => {
                     let parent = task.env;
                     let pc = task.pc;
                     task.pc += offset;
@@ -640,6 +656,31 @@ impl Actor {
                         env: self.heap.create_child(parent),
                         status: TaskStatus::Ready,
                     };
+                },
+
+                &Op::Leave { depth } => {
+                    let remaining = self.tasks.len().saturating_sub(depth);
+
+                    self.tasks.drain(remaining ..).for_each(|task| {
+                        self.heap.release(task.env);
+                    });
+
+                    self.heap.release(task.env);
+
+                    let Some(next_task) = self.tasks.pop() else {
+                        // Equivalent to Op::Hibernate
+                        return Ok(());
+                    };
+
+                    task = next_task;
+
+                    let TaskStatus::Ready = &task.status else {
+                        // Call tasks.push() below, but stop execution
+                        break;
+                    };
+
+                    // Skip pc increment
+                    continue;
                 },
 
                 &Op::PushHandler { ref pattern, label, cancel } => {
@@ -813,26 +854,14 @@ impl Actor {
                     break;
                 },
 
-                Op::Return => {
+                Op::Hibernate => {
                     self.heap.release(task.env);
 
-                    // TODO: Any other cleanup?
-
-                    if let Some(next) = self.tasks.pop() {
-                        task = next;
-
-                        let &TaskStatus::Ready = &task.status else {
-                            // Call tasks.push() below, but stop execution
-                            break;
-                        };
-
-                        // Skip pc increment
-                        continue;
-                    } else {
-                        // Time to hibernate
-                        // Skip the call to tasks.push()
-                        return Ok(());
+                    for task in self.tasks.drain(..) {
+                        self.heap.release(task.env);
                     }
+
+                    return Ok(());
                 },
 
                 Op::Retire => {
@@ -948,7 +977,7 @@ fn two_plus_two() {
             mut_local("Bar", sub(local("Four"), 2)),
             eval(local("Bar")),
             mut_global("BAR", local("Bar")),
-            Op::Return,
+            Op::Hibernate,
         ].into()
     }), globals);
 

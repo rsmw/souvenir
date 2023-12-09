@@ -16,7 +16,7 @@ impl fmt::Display for Script {
                     used_labels.insert(label);
                 },
 
-                &Op::EnterBlock { offset } |
+                &Op::Enter { offset } |
                 &Op::Jz { offset, .. } |
                 &Op::Jump { offset } => {
                     let label = TaskLabel(index + offset);
@@ -53,9 +53,13 @@ impl fmt::Display for Script {
                     writeln!(f, "Eval ({dst:?}) = {expr}")?;
                 },
 
-                Op::EnterBlock { offset } => {
+                Op::Enter { offset } => {
                     let target = TaskLabel(index + offset);
-                    writeln!(f, "EnterBlock until {target}")?;
+                    writeln!(f, "Enter until {target}")?;
+                },
+
+                Op::Leave { depth } => {
+                    writeln!(f, "Leave {depth}")?;
                 },
 
                 Op::PushHandler { pattern, label, cancel } => {
@@ -128,7 +132,7 @@ impl fmt::Display for Script {
                     writeln!(f, "Wait {amount}")?;
                 },
 
-                Op::Return => writeln!(f, "Return")?,
+                Op::Hibernate => writeln!(f, "Hibernate")?,
 
                 Op::Retire => writeln!(f, "Retire")?,
 
