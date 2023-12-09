@@ -12,7 +12,7 @@ use std::sync::{Arc, RwLock};
 use anyhow::{self, bail, Result};
 
 use crate::ast::{Expr, Splice};
-use crate::interpret::Pattern;
+use crate::interpret::{Pattern, Script};
 use crate::value::Value;
 
 //pub type Result<T, E=EvalErr> = std::result::Result<T, E>;
@@ -22,7 +22,7 @@ pub enum EvalErr {
 
 }
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(crate) enum GlobalValue {
     Int(u64),
 
@@ -416,16 +416,79 @@ impl LocalEnv {
 }
 
 impl GlobalHandle {
-    pub fn with_values(values: &[(&str, Value)]) -> Result<Self> {
-        let mut bindings = HashMap::default();
+    /// Create a new global dictionary with no variables bound.
+    ///
+    /// Calling this multiple times will create multiple dictionaries.
+    /// Instead, consider cloning the handle.
+    pub fn empty() -> Self {
+        let bindings = HashMap::default();
+        let env = GlobalEnv { bindings };
+        Self(Arc::new(env.into()))
+    }
 
-        for (name, value) in values.iter().cloned() {
-            let value = GlobalValue::try_from(value)?;
-            bindings.insert(name.into(), value);
+    /// Helper method for initializing multiple variables
+    /// without the use of `Self::merge_defaults()`.
+    #[cfg(test)]
+    pub(crate) fn with_values<P, N>(pairs: P) -> Result<Self>
+    where N: Into<Arc<str>>, P: Iterator<Item=(N, u64)>
+    {
+        let handle = Self::empty();
+
+        { 
+            let mut env = handle.0.write().unwrap();
+
+            for (name, value) in pairs {
+                let value = GlobalValue::Int(value);
+                env.bindings.insert(name.into(), value);
+            }
         }
 
-        let env = GlobalEnv { bindings };
-        Ok(Self(Arc::new(env.into())))
+        Ok(handle)
+    }
+
+    /// Bind all global variables declared in a script.
+    /// Multiple scripts may declare the same global variable.
+    pub fn merge_defaults(&self, script: &Script) -> Result<()> {
+        use anyhow::Context;
+
+        let mut dict = self.0.write().unwrap();
+
+        for (name, default) in script.global_defaults() {
+            if dict.bindings.contains_key(&name) {
+                continue;
+            }
+
+            let value = match default {
+                None => GlobalValue::Int(0),
+
+                Some(expr) => {
+                    dict.eval_default(expr).with_context(|| {
+                        format!("Evaluating default for ${name}")
+                    })?
+                },
+            };
+
+            dict.bindings.insert(name, value);
+        }
+
+        Ok(())
+    }
+}
+
+impl GlobalEnv {
+    fn eval_default(&self, expr: &Expr) -> Result<GlobalValue> {
+        use anyhow::anyhow;
+
+        match expr {
+            &Expr::Int { value } => Ok(GlobalValue::Int(value.into())),
+
+            Expr::Global { name } => self.bindings.get(name.as_str()).cloned()
+            .ok_or_else(|| anyhow!("Global ${name} is not yet defined")),
+
+            Expr::Paren { value } => self.eval_default(&value),
+
+            other => bail!("Cannot eval {other} as a global initializer"),
+        }
     }
 }
 
@@ -503,7 +566,7 @@ pub mod dsl {
 fn hello_world() {
     use dsl::*;
 
-    let globals = GlobalHandle::with_values(&[("ONE", Value::Int(3))]).unwrap();
+    let globals = GlobalHandle::with_values([("ONE", 3_u64)].into_iter()).unwrap();
 
     let mut heap = EnvHeap::with_globals(globals.clone());
 
@@ -545,7 +608,7 @@ fn compare_ints() {
         infix(Binop::Less, 2, 3)
     };
 
-    let globals = GlobalHandle::with_values(&[]).unwrap();
+    let globals = GlobalHandle::empty();
     let mut heap = EnvHeap::with_globals(globals);
     let locals = heap.create();
 

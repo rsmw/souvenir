@@ -55,6 +55,8 @@ pub struct Actor {
 /// Compiled script.
 #[derive(Debug)]
 pub struct Script {
+    pub(crate) globals: HashMap<Arc<str>, Option<Expr>>,
+
     pub(crate) pages: HashMap<Arc<str>, PageInfo>,
 
     /// Stores all opcodes in a single linear array.
@@ -857,6 +859,14 @@ impl Actor {
     }
 }
 
+impl Script {
+    pub(crate) fn global_defaults(&self) -> impl Iterator<Item=(Arc<str>, Option<&Expr>)> {
+        self.globals.iter().map(|(name, default)| {
+            (name.clone(), default.as_ref())
+        })
+    }
+}
+
 impl TaskStatus {
     fn secret(&self) -> Option<usize> {
         match self {
@@ -915,7 +925,8 @@ mod dsl {
         fn from(value: Vec<Op>) -> Self {
             let body = value.into();
             let pages = HashMap::new();
-            Script { body, pages }
+            let globals = HashMap::new();
+            Script { body, pages, globals }
         }
     }
 }
@@ -924,11 +935,11 @@ mod dsl {
 fn two_plus_two() {
     use dsl::*;
 
-    let globals = GlobalHandle::with_values(&[
-        ("ONE", Value::Int(1)),
-        ("TWO", Value::Int(2)),
-        ("BAR", Value::Int(0)),
-    ]).unwrap();
+    let globals = GlobalHandle::with_values([
+        ("ONE", 1),
+        ("TWO", 2),
+        ("BAR", 0),
+    ].into_iter()).unwrap();
 
     let mut actor = Actor::from_script(Arc::new({
         vec![
@@ -972,7 +983,7 @@ fn eval_stitch() {
         }),
     ].into());
 
-    let globals = GlobalHandle::with_values(&[]).unwrap();
+    let globals = GlobalHandle::empty();
     let mut actor = Actor::from_script(script, globals);
 
     actor.resume().unwrap();
@@ -991,7 +1002,7 @@ fn eval_stitch() {
 fn ffi_meet_and_greet() {
     use dsl::*;
 
-    let globals = GlobalHandle::with_values(&[]).unwrap();
+    let globals = GlobalHandle::empty();
 
     let mut actor = Actor::from_script(Arc::new(vec![
         let_local("Neighbor", Expr::FnCall {
@@ -1046,7 +1057,7 @@ fn menu_single() {
         Op::Retire,
     ].into();
 
-    let globals = GlobalHandle::with_values(&[]).unwrap();
+    let globals = GlobalHandle::empty();
 
     let mut actor = Actor::from_script(script.into(), globals);
 
@@ -1097,7 +1108,7 @@ fn menu_multiple() {
         }),
     ].into();
 
-    let globals = GlobalHandle::with_values(&[]).unwrap();
+    let globals = GlobalHandle::empty();
 
     let mut actor = Actor::from_script(Arc::new(script), globals);
 
@@ -1164,9 +1175,9 @@ fn nested() {
 
     let script = crate::parse(src).unwrap().compile().unwrap();
 
-    let globals = GlobalHandle::with_values(&[
-        ("count", Value::Int(9000)),
-    ]).unwrap();
+    let globals = GlobalHandle::with_values([
+        ("count", 9000),
+    ].into_iter()).unwrap();
 
     let mut actor = Actor::from_script(script.into(), globals);
 

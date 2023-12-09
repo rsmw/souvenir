@@ -26,6 +26,9 @@ pub(crate) struct Compiler {
     /// Maps page names to LabelId placeholders.
     pages: HashMap<Arc<str>, PageInfo>,
 
+    /// Globals used by this script, with optional default values.
+    globals: HashMap<Arc<str>, Option<Expr>>,
+
     /// Contains all labels that have been previously defined.
     known_labels: HashMap<LabelId, TaskLabel>,
 
@@ -124,8 +127,15 @@ impl ast::Script {
 }
 
 impl Compiler {
-    fn define_global(&mut self, name: &str, gtype: GlobalType) -> Result<()> {
-        warn!("TODO: Define global {name} with type {gtype:?}");
+    fn define_global(&mut self, name: &str, _gtype: GlobalType) -> Result<()> {
+        warn!("TODO: Typed globals");
+
+        if self.globals.contains_key(name) {
+            bail!("Global ${name} redefined");
+        }
+
+        self.globals.insert(name.into(), None);
+
         Ok(())
     }
 
@@ -269,7 +279,9 @@ impl Compiler {
             })
         }).collect();
 
-        Ok(Script { body, pages })
+        let globals = self.globals;
+
+        Ok(Script { body, pages, globals })
     }
 
     /// Translate the body of a nested scope that is evaluated immediately.

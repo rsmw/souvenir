@@ -19,7 +19,8 @@ fn main() -> Result<()> {
 
     let script = Arc::new(souvenir::parse(&source)?.compile()?);
 
-    let globals = GlobalHandle::with_values(&[])?;
+    let globals = GlobalHandle::empty();
+    globals.merge_defaults(&script)?;
 
     let mut actor = Actor::from_script(script, globals);
 
