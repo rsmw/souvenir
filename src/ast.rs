@@ -395,7 +395,12 @@ impl<'src, I: Iterator<Item=Token<'src>>> Parser<'src, I> {
             };
 
             match &next.kind {
-                Tok::LabelMarker | Tok::Semicolons | Tok::OptionPipe | Tok::KwdElse => break,
+                | Tok::LabelMarker
+                | Tok::Semicolons
+                | Tok::OptionPipe
+                | Tok::KwdElse => {
+                    break;
+                },
 
                 Tok::LineBreak => {
                     self.input.next();
@@ -716,10 +721,26 @@ impl<'src, I: Iterator<Item=Token<'src>>> Parser<'src, I> {
 
     fn peek_infix_power(&mut self) -> Option<(u32, u32)> {
         Some(match self.input.peek()?.kind {
-            Tok::Less | Tok::Equal | Tok::Greater => (30, 31),
-            Tok::Plus | Tok::Minus => (40, 41),
-            Tok::Splat | Tok::Slash => (50, 51),
-            Tok::Stitch => (20, 21),
+            | Tok::Less
+            | Tok::Equal
+            | Tok::Greater => {
+                (30, 31)
+            },
+
+            | Tok::Plus
+            | Tok::Minus => {
+                (40, 41)
+            },
+
+            | Tok::Splat
+            | Tok::Slash => {
+                (50, 51)
+            },
+
+            Tok::Stitch => {
+                (20, 21)
+            },
+
             _ => return None,
         })
     }

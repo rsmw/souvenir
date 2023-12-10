@@ -11,14 +11,14 @@ impl fmt::Display for Script {
 
         for (index, op) in self.body.as_ref().iter().enumerate() {
             match op {
-                &Op::CancelHandler { label } |
-                &Op::PushHandler { label, .. } => {
+                | &Op::CancelHandler { label }
+                | &Op::PushHandler { label, .. } => {
                     used_labels.insert(label);
                 },
 
-                &Op::Enter { offset } |
-                &Op::Jz { offset, .. } |
-                &Op::Jump { offset } => {
+                | &Op::Enter { offset }
+                | &Op::Jz { offset, .. }
+                | &Op::Jump { offset } => {
                     let label = TaskLabel(index + offset);
                     used_labels.insert(label);
                 },

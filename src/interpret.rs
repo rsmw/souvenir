@@ -448,7 +448,8 @@ impl Actor {
                 task.status = TaskStatus::Ready;
             },
 
-            TaskStatus::Ready | TaskStatus::Sleeping { .. } => {
+            | TaskStatus::Ready
+            | TaskStatus::Sleeping { .. } => {
                 return Ok(false);
             },
         }
@@ -555,7 +556,8 @@ impl Actor {
                         ActorStatus::Sleeping { time_left }
                     },
 
-                    TaskStatus::AwaitFfi { .. } | TaskStatus::AwaitMenu { .. } => {
+                    | TaskStatus::AwaitFfi { .. }
+                    | TaskStatus::AwaitMenu { .. } => {
                         ActorStatus::Blocked
                     },
                 }
@@ -566,8 +568,15 @@ impl Actor {
     /// Query whether the actor is "alive" or "dead" (eg. killed by an error).
     pub fn is_alive(&self) -> bool {
         match self.liveness {
-            ActorLiveness::Running | ActorLiveness::Loading { .. } => true,
-            ActorLiveness::Retiring | ActorLiveness::Killed { .. } => false,
+            | ActorLiveness::Running
+            | ActorLiveness::Loading { .. } => {
+                true
+            },
+
+            | ActorLiveness::Retiring
+            | ActorLiveness::Killed { .. } => {
+                false
+            },
         }
     }
 

@@ -195,9 +195,9 @@ impl Compiler {
 
         for index in fixups {
             match &mut body[index] {
-                Op::Enter { offset } |
-                Op::Jump { offset } |
-                Op::Jz { offset, .. } => {
+                | Op::Enter { offset }
+                | Op::Jump { offset }
+                | Op::Jz { offset, .. } => {
                     // Target is encoded as offset
                     // Check validity first
                     if *offset < LabelId::MAGIC {
@@ -623,11 +623,8 @@ impl Op {
     /// Convenience method for performing fixups
     fn visit_labels(&mut self, mut f: impl FnMut(&mut TaskLabel) -> Result<()>) -> Result<()> {
         match self {
-            Op::PushHandler { label, .. } => {
-                f(label)
-            },
-
-            Op::CancelHandler { label } => {
+            | Op::CancelHandler { label }
+            | Op::PushHandler { label, .. } => {
                 f(label)
             },
 
@@ -656,15 +653,17 @@ impl Op {
             | Op::Wait { .. }
             | Op::Hibernate
             | Op::Retire
-            | Op::Hcf { .. } => Ok(()),
+            | Op::Hcf { .. } => {
+                Ok(())
+            },
         }
     }
 
     fn visit_offsets(&mut self, mut f: impl FnMut(&mut usize) -> Result<()>) -> Result<()> {
         match self {
-            Op::Enter { offset } |
-            Op::Jz { offset, .. } |
-            Op::Jump { offset } => {
+            | Op::Enter { offset }
+            | Op::Jz { offset, .. }
+            | Op::Jump { offset } => {
                 f(offset)
             },
 

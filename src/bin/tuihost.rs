@@ -76,11 +76,15 @@ fn main() -> Result<()> {
         }
 
         match actor.status() {
-            ActorStatus::Running => continue,
-            ActorStatus::Sleeping { .. } => continue,
+            | ActorStatus::Running
+            | ActorStatus::Sleeping { .. } => {
+                continue;
+            },
 
-            ActorStatus::Retiring => break,
-            ActorStatus::Hibernating => break,
+            | ActorStatus::Retiring
+            | ActorStatus::Hibernating => {
+                break;
+            },
 
             ActorStatus::Loading { path, args } => {
                 bail!("Not implemented: Loading script {path}({args:?})");
