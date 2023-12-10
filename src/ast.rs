@@ -70,10 +70,6 @@ pub enum Stmt {
         text: Vec<Splice>,
     },
 
-    Music {
-        path: String,
-    },
-
     Trace {
         on: bool,
     },
@@ -527,19 +523,6 @@ impl<'src, I: Iterator<Item=Token<'src>>> Parser<'src, I> {
             Tok::KwdMenu => {
                 let choices = self.parse_menu()?;
                 Stmt::Menu { choices }
-            },
-
-            Tok::KwdMusic => {
-                let next = self.expect_token()?;
-
-                let Tok::LitString(path) = &next.kind else {
-                    let loc = self.line_and_column(next.offset);
-                    bail!("{loc}: Expected string, found {:?}", &next.kind);
-                };
-
-                let path = path.clone();
-
-                Stmt::Music { path }
             },
 
             Tok::KwdTrace => {

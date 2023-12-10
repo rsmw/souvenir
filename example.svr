@@ -6,7 +6,7 @@ on #example { ... } if not $seen_example
 
 :: init
 
-music "sound/wwwfih_pianosolo_combined.ogg"
+music("sound/wwwfih_pianosolo_combined.ogg")
 
 > You sit alone in the bar for hours with nothing to do but wait. Some idiot comes in already sloshed, breathing cheap vodka at you from across the room. It's Leichensack. You don't even have to look. He wads himself up into the seat next to yours.
 

@@ -500,18 +500,6 @@ impl Compiler {
                 self.emit(Op::Quote { speaker, lines })?;
             },
 
-            ast::Stmt::Music { path } => {
-                self.emit(Op::Eval {
-                    expr: Expr::FnCall {
-                        lhs: Expr::Local { name: "music".into() }.into(),
-                        args: vec![
-                            Expr::String { value: path },
-                        ].into(),
-                    }.into(),
-                    dst: Placement::Discard,
-                })?;
-            },
-
             ast::Stmt::Trace { on } => {
                 self.emit(Op::Trace { on })?;
             },
