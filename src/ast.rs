@@ -1,7 +1,7 @@
 use std::{fmt, sync::Arc};
 use std::iter::Peekable;
 
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Context, Result, bail};
 
 use super::token::*;
 
@@ -264,9 +264,25 @@ impl<'src, I: Iterator<Item=Token<'src>>> Parser<'src, I> {
         Ok(())
     }
 
-    /// Consume one token and return it. Returns an error on EOF.
+    /// Consume one token and return it. Returns an error on EOF or on token
+    /// types that are always invalid.
     fn expect_token(&mut self) -> Result<Token<'src>> {
-        self.input.next().ok_or_else(|| anyhow!("Unexpected end of input"))
+        let Some(next) = self.input.next() else {
+            bail!("Unexpected end of input");
+        };
+
+        let loc = self.line_and_column(next.offset);
+        let content = next.content;
+
+        if let Tok::InvalidComment = &next.kind {
+            bail!("{loc}: Invalid line comment inside string: {content}");
+        } else if let Tok::InvalidInt(_) = &next.kind {
+            bail!("{loc}: Invalid number literal: {content}");
+        } else if let Tok::Unrecognized(_) = &next.kind {
+            bail!("{loc}: Unrecognized token: {content:?}");
+        }
+
+        Ok(next)
     }
 
     /// If the next token is of the expected kind, consume it and return true.
@@ -1156,6 +1172,18 @@ mod test {
                 ],
             }.into(),
         });
+    }
+
+    #[test]
+    fn forbidden_comments() {
+        crate::parse("> { -- This comment should not be here }\n")
+        .expect_err("Invalid line comment in string");
+    }
+
+    #[test]
+    fn invalid_int() {
+        crate::parse("12345678901234567890")
+        .expect_err("Invalid integer literal");
     }
 
     trait ParseExample<T> {

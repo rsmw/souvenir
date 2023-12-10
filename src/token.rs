@@ -67,6 +67,7 @@ pub enum Tok {
     ParenClose,
     CurlyOpen,
     CurlyClose,
+    InvalidComment,
     InvalidInt(String),
     Unrecognized(char),
 }
@@ -253,7 +254,10 @@ impl<'src> Iterator for Lexer<'src> {
             } else if self.bump_if_equal('-') {
                 self.bump_while(|c| c != '\n');
 
-                Tok::Comment
+                match self.depth {
+                    St::Root => Tok::Comment,
+                    _ => Tok::InvalidComment,
+                }
             } else {
                 Tok::Minus
             },
@@ -425,7 +429,7 @@ impl fmt::Display for Tok {
             Tok::Dot => write!(f, "."),
             Tok::Ellipsis => write!(f, "..."),
             Tok::LineBreak => write!(f, ","),
-            Tok::Comment => write!(f, "-- ..."),
+            Tok::Comment | Tok::InvalidComment => write!(f, "-- ..."),
             Tok::Whitespace => write!(f, " "),
             Tok::ParenOpen => write!(f, "("),
             Tok::ParenClose => write!(f, ")"),
