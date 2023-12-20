@@ -287,23 +287,6 @@ impl Compiler {
         Ok(Script { body, pages, globals })
     }
 
-    /// Translate the body of a nested scope that is evaluated immediately.
-    fn in_block(&mut self, f: impl FnOnce(&mut Self) -> Result<()>) -> Result<()> {
-        let after = self.alloc_label();
-
-        let offset = self.jump_to(after)?;
-        self.emit(Op::Enter { offset })?;
-        self.depth += 1;
-
-        let t = f(self)?;
-
-        self.depth -= 1;
-        self.emit(Op::Leave { depth: 0 })?;
-
-        self.define_label(after)?;
-        Ok(t)
-    }
-
     /// Translate the body of a callback with a specified label.
     fn in_callback(&mut self, start: LabelId, f: impl FnOnce(&mut Self) -> Result<()>) -> Result<()> {
         let after = self.alloc_label();
@@ -346,6 +329,26 @@ impl Compiler {
         Ok(())
     }
 
+    /// Translate the body of a nested scope that is evaluated immediately.
+    fn tr_block(&mut self, body: Vec<ast::Stmt>) -> Result<()> {
+        let after = self.alloc_label();
+
+        let offset = self.jump_to(after)?;
+        self.emit(Op::Enter { offset })?;
+        self.depth += 1;
+
+        for stmt in body {
+            self.tr_stmt(stmt)?;
+        }
+
+        self.depth -= 1;
+        self.emit(Op::Leave { depth: 0 })?;
+
+        self.define_label(after)?;
+
+        Ok(())
+    }
+
     fn tr_stmt(&mut self, stmt: ast::Stmt) -> Result<()> {
         match stmt {
             ast::Stmt::Let { name, value } => {
@@ -368,13 +371,7 @@ impl Compiler {
                     let offset = self.jump_to(or_else)?;
                     self.emit(Op::Jz { guard, offset })?;
 
-                    self.in_block(|this| {
-                        for stmt in body {
-                            this.tr_stmt(stmt)?;
-                        }
-
-                        Ok(())
-                    })?;
+                    self.tr_block(body)?;
 
                     let offset = self.jump_to(exit)?;
                     self.emit(Op::Jump { offset })?;
@@ -382,13 +379,7 @@ impl Compiler {
                     self.define_label(or_else)?;
                 }
 
-                self.in_block(|this| {
-                    for stmt in fallback {
-                        this.tr_stmt(stmt)?;
-                    }
-
-                    Ok(())
-                })?;
+                self.tr_block(fallback)?;
 
                 self.define_label(exit)?;
             },
