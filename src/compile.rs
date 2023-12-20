@@ -440,11 +440,12 @@ impl Compiler {
             },
 
             ast::Stmt::Listen { pattern } => {
-                let label = TaskLabel(0);
+                let after = self.alloc_label();
                 let pattern = self.tr_pattern(pattern)?;
+                let label = self.use_label(after)?;
                 self.emit(Op::PushHandler { pattern, label, cancel: true })?;
                 self.emit(Op::Hibernate)?;
-                // TODO: Fixup
+                self.define_label(after)?;
             },
 
             ast::Stmt::Menu { choices } => {
