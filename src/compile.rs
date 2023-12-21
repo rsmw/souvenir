@@ -449,6 +449,8 @@ impl Compiler {
             },
 
             ast::Stmt::Menu { choices } => {
+                let exit = self.alloc_label();
+
                 let mut items = Vec::<MenuItem>::new();
                 let mut bodies = Vec::new();
 
@@ -468,15 +470,27 @@ impl Compiler {
                 let choices = Arc::<[_]>::from(items);
                 self.emit(Op::Menu { choices })?;
 
-                for (pc, actions) in bodies {
-                    self.in_callback(pc, |this| {
-                        for stmt in actions {
-                            this.tr_stmt(stmt)?;
-                        }
+                // We can't use tr_block here as-is.
+                // Instead, let's try this...
 
-                        Ok(())
-                    })?;
+                let offset = self.jump_to(exit)?;
+                self.emit(Op::Jump { offset })?;
+
+                for (pc, actions) in bodies {
+                    // Entry point with implicit Enter
+                    self.define_label(pc)?;
+                    
+                    for stmt in actions {
+                        self.tr_stmt(stmt)?;
+                    }
+
+                    // Explicit Leave resumes at label `exit`
+                    self.emit(Op::Leave { depth: 0 })?;
                 }
+
+                self.define_label(exit)?;
+
+                // TODO: Double-check everything!
             },
 
             ast::Stmt::Quote { speaker, text } => {
