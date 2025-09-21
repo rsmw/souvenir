@@ -530,7 +530,7 @@ impl Actor {
     }
 
     /// Query the actor's current state.
-    pub fn status(&self) -> ActorStatus {
+    pub fn status(&'_ self) -> ActorStatus<'_> {
         match &self.liveness {
             ActorLiveness::Killed { error } => {
                 ActorStatus::Killed { error }
