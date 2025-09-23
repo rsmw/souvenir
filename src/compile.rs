@@ -63,9 +63,13 @@ struct LabelId(usize);
 
 impl ast::Script {
     pub fn compile(&self) -> Result<Script> {
-        let mut compiler = Compiler::default();
+        Compiler::default().compile(self)
+    }
+}
 
-        let header: Vec<_> = self.header.clone();
+impl Compiler {
+    fn compile(mut self, ast: &ast::Script) -> Result<Script> {
+        let header: Vec<_> = ast.header.clone();
 
         for decl in header {
             match decl {
@@ -74,62 +78,60 @@ impl ast::Script {
                     .map(|s| Arc::<str>::from(s.as_str()))
                     .collect();
 
-                    compiler.define_global(&name, GlobalType::Enum { variants })?;
+                    self.define_global(&name, GlobalType::Enum { variants })?;
                 },
 
                 ast::Decl::Flag { name } => {
-                    compiler.define_global(&name, GlobalType::Int)?;
+                    self.define_global(&name, GlobalType::Int)?;
                 },
             }
         }
 
         // Create LabelIds for all pages
-        for ast::Page { label: name, .. } in self.pages.clone() {
-            let label = compiler.alloc_label();
+        for ast::Page { label: name, .. } in ast.pages.clone() {
+            let label = self.alloc_label();
 
-            if compiler.pages.contains_key(&name) {
+            if self.pages.contains_key(&name) {
                 bail!("Redefined page name {name}");
             }
 
-            compiler.pages.insert(name, PageInfo {
+            self.pages.insert(name, PageInfo {
                 entry_point: label,
                 params: vec![], // TODO: Get params from AST
             });
         }
 
-        if let Some(first) = self.pages.first() {
-           let name = first.label.clone();
-           compiler.continue_target = ContinueTarget::Page(name);
+        if let Some(first) = ast.pages.first() {
+            let name = first.label.clone();
+            self.continue_target = ContinueTarget::Page(name);
         }
 
-        for stmt in self.setup.clone() {
-            compiler.tr_stmt(stmt)?;
+        for stmt in ast.setup.clone() {
+            self.tr_stmt(stmt)?;
         }
 
         // Use peekable iterator to be able to set continue points
-        let mut pages = self.pages.clone().into_iter().peekable();
+        let mut pages = ast.pages.clone().into_iter().peekable();
 
         while let Some(ast::Page { label, body }) = pages.next() {
-            let Some(page) = compiler.pages.get(&label) else {
+            let Some(page) = self.pages.get(&label) else {
                 bail!("Internal error: Page entry point {label:?} was never bookmarked");
             };
 
-            compiler.define_label(page.entry_point)?;
+            self.define_label(page.entry_point)?;
 
             if let Some(ast::Page { label: next, .. }) = pages.peek() {
-                compiler.continue_target = ContinueTarget::Page(next.clone());
+                self.continue_target = ContinueTarget::Page(next.clone());
             }
 
             for stmt in body {
-                compiler.tr_stmt(stmt)?;
+                self.tr_stmt(stmt)?;
             }
         }
 
-        compiler.finish()
+        self.finish()
     }
-}
 
-impl Compiler {
     fn define_global(&mut self, name: &str, _gtype: GlobalType) -> Result<()> {
         warn!("TODO: Typed globals");
 
@@ -239,6 +241,7 @@ impl Compiler {
         Ok(())
     }
 
+    /// Perform final checks and tear down `self`.
     fn finish(mut self) -> Result<Script> {
         if !self.unknown_labels.is_empty() {
             let count = self.unknown_labels.len();
