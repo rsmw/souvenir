@@ -1,15 +1,22 @@
 use std::env::args;
+use std::error::Error;
 use std::io::{stdin, stdout, Write};
 use std::sync::Arc;
 use std::time::Instant;
-
-use anyhow::{bail, Result};
 
 use log::warn;
 
 use souvenir::eval::GlobalHandle;
 use souvenir::interpret::{Actor, IoPayload, ActorStatus};
 use souvenir::value::Value;
+
+type Result<T, E=Box<dyn Error>> = std::result::Result<T, E>;
+
+macro_rules! bail {
+    ($($a:tt)*) => {
+        return Err(format!($($a)*).into())
+    };
+}
 
 fn main() -> Result<()> {
     let source = match args().nth(1) {

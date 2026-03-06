@@ -1,11 +1,9 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use anyhow::{Result, bail};
+use log::{warn, debug, error};
 
-use log::{warn, debug};
-
-use crate::ast::{self, Expr};
+use crate::ast::{self, Expr, SpannedError};
 use crate::interpret::{Op, Pattern, MenuItem, Script, TaskLabel};
 use crate::eval::Placement;
 
@@ -16,6 +14,34 @@ pub enum GlobalType {
     Enum {
         variants: Vec<Arc<str>>,
     },
+}
+
+#[derive(thiserror::Error)]
+#[derive(Clone, Debug)]
+pub enum CompileErr {
+    #[error("yeet")]
+    Yeet,
+
+    #[error("Redefined page name {name:?}")]
+    RedefinedPageName {
+        name: String,
+    },
+
+    #[error("Internal error: Page entry point {label:?} was never bookmarked")]
+    IceNeverBookmarked {
+        label: String,
+    },
+}
+
+pub type Result<T, E=CompileErr> = std::result::Result<T, E>;
+
+macro_rules! bail {
+    ($($asdf:tt)*) => {
+        {
+            error!($($asdf)*);
+            return Err(CompileErr::Yeet)
+        }
+    };
 }
 
 #[derive(Default)]
@@ -92,7 +118,8 @@ impl Compiler {
             let label = self.alloc_label();
 
             if self.pages.contains_key(&name) {
-                bail!("Redefined page name {name}");
+                let name = name.to_string();
+                return Err(CompileErr::RedefinedPageName { name });
             }
 
             self.pages.insert(name, PageInfo {
@@ -115,7 +142,8 @@ impl Compiler {
 
         while let Some(ast::Page { label, body }) = pages.next() {
             let Some(page) = self.pages.get(&label) else {
-                bail!("Internal error: Page entry point {label:?} was never bookmarked");
+                let label = label.to_string();
+                return Err(CompileErr::IceNeverBookmarked { label });
             };
 
             self.define_label(page.entry_point)?;
@@ -136,7 +164,8 @@ impl Compiler {
         warn!("TODO: Typed globals");
 
         if self.globals.contains_key(name) {
-            bail!("Global ${name} redefined");
+            error!("Global ${name} redefined");
+            return Err(CompileErr::Yeet);
         }
 
         self.globals.insert(name.into(), None);
@@ -165,7 +194,8 @@ impl Compiler {
 
     fn jump_to(&mut self, label: LabelId) -> Result<usize> {
         if self.known_labels.contains_key(&label) {
-            bail!("Cannot jump forward to previously defined label {label:?}");
+            error!("Cannot jump forward to previously defined label {label:?}");
+            return Err(CompileErr::Yeet);
         }
 
         self.unknown_labels.entry(label)
@@ -177,11 +207,13 @@ impl Compiler {
 
     fn define_label(&mut self, label: LabelId) -> Result<()> {
         if let Some(&old) = self.known_labels.get(&label) {
-            bail!("Redefined {label:?}; was previously {old:?}");
+            error!("Redefined {label:?}; was previously {old:?}");
+            return Err(CompileErr::Yeet);
         }
 
         let Some(fixups) = self.unknown_labels.remove(&label) else {
-            bail!("Tried to define an unallocated label: {label:?}");
+            error!("Tried to define an unallocated label: {label:?}");
+            return Err(CompileErr::Yeet);
         };
 
         // Disjoint borrow
@@ -503,8 +535,10 @@ impl Compiler {
                 };
 
                 let lines = text.into_iter().map(|s| {
-                    s.map_exprs(&mut |expr| self.tr_expr(expr))
-                }).collect::<Result<Vec<_>>>()?.into();
+                    s.map_exprs(&mut |expr| {
+                        self.tr_expr(expr)
+                    })
+                }).collect::<Result<Vec<_>, _>>()?.into();
 
                 self.emit(Op::Quote { speaker, lines })?;
             },
@@ -666,5 +700,11 @@ impl Op {
 
             _ => Ok(()),
         }
+    }
+}
+
+impl From<SpannedError> for CompileErr {
+    fn from(_value: SpannedError) -> Self {
+        Self::Yeet
     }
 }

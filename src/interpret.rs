@@ -9,14 +9,12 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{bail, Result};
-
 use log::debug;
 
 use crate::ast::{Expr, Splice};
 
-use crate::eval::{EnvHandle, EnvHeap, GlobalHandle, Placement};
-use crate::value::{ActorRef, Value};
+use crate::eval::{EnvHandle, EnvHeap, EvalErr, GlobalHandle, Placement};
+use crate::value::{ActorRef, Value, ValueErr};
 
 /// An Actor is a self-contained Souvenir script interpreter, containing all
 /// state necessary for evaluating expressions and handling incoming messages.
@@ -270,6 +268,15 @@ pub enum ActorStatus<'a> {
     Hibernating,
 }
 
+#[derive(thiserror::Error)]
+#[derive(Clone, Debug)]
+pub enum InterpErr {
+    #[error("Something happened")]
+    SomethingHappened,
+}
+
+pub type Result<T, E=InterpErr> = std::result::Result<T, E>;
+
 /// Internal representation of liveness
 #[derive(Debug)]
 enum ActorLiveness {
@@ -336,6 +343,12 @@ struct HandlerClosure {
 #[derive(Debug)]
 struct Secrets {
     next: usize,
+}
+
+macro_rules! bail {
+    ($($dontcare:tt)*) => {
+        todo!($($dontcare)*)
+    };
 }
 
 impl Actor {
@@ -622,7 +635,7 @@ impl Actor {
                         };
 
                         let args = args.iter().map(|expr| {
-                            self.heap.ctx(task.env).eval(expr)
+                            self.heap.ctx(task.env).eval(expr).map_err(From::from)
                         }).collect::<Result<Vec<Value>>>()?;
 
                         let dst = dst.clone();
@@ -788,6 +801,7 @@ impl Actor {
                 Op::Quote { speaker, lines } => {
                     let speaker = speaker.as_ref().map(|expr| -> Result<ActorRef> {
                         ActorRef::try_from(self.heap.eval(expr.as_ref(), task.env)?)
+                        .map_err(From::from)
                     }).transpose()?;
 
                     let line = self.heap.stitch(lines.as_ref(), task.env)?;
@@ -820,7 +834,7 @@ impl Actor {
                     let path = path.clone();
 
                     let args = args.iter().map(|expr| {
-                        self.heap.eval(expr, task.env)
+                        self.heap.eval(expr, task.env).map_err(From::from)
                     }).collect::<Result<Vec<Value>>>()?;
 
                     // Prevent all pending tasks from completing IO reqs
@@ -926,6 +940,18 @@ impl Secrets {
         let secret = self.next;
         self.next += 1;
         secret
+    }
+}
+
+impl From<ValueErr> for InterpErr {
+    fn from(_err: ValueErr) -> Self {
+        Self::SomethingHappened
+    }
+}
+
+impl From<EvalErr> for InterpErr {
+    fn from(_err: EvalErr) -> Self {
+        Self::SomethingHappened
     }
 }
 

@@ -9,17 +9,27 @@
 use std::collections::{HashMap, BTreeMap};
 use std::sync::{Arc, RwLock};
 
-use anyhow::{self, bail, Result};
+//use anyhow::{self, bail, Result};
 
 use crate::ast::{Expr, Splice};
 use crate::interpret::{Pattern, Script};
-use crate::value::Value;
+use crate::value::{Value, ValueErr};
 
 //pub type Result<T, E=EvalErr> = std::result::Result<T, E>;
 
+#[derive(thiserror::Error)]
 #[derive(Clone, Debug)]
 pub enum EvalErr {
+    #[error("THE BIG CHUNGUS")]
+    Chungus,
+}
 
+pub type Result<T, E=EvalErr> = std::result::Result<T, E>;
+
+macro_rules! bail {
+    ($($anything:tt)*) => {
+        todo!($($anything)*)
+    };
 }
 
 #[derive(Clone, Debug)]
@@ -168,7 +178,7 @@ impl EnvHeap {
     }
 
     pub(crate) fn lookup_global(&self, name: &str) -> Result<Value> {
-        let globals = self.globals.read().or_else(|_| {
+        let globals = self.globals.read().or_else(|_| -> Result<_> {
             bail!("Cannot access global dict");
         })?;
 
@@ -345,7 +355,7 @@ impl<'a> BindContext<'a> {
     }
 
     pub(crate) fn bind_pattern(&mut self, pat: &Pattern, args: HashMap<Arc<str>, Value>) -> Result<bool> {
-        let Pattern { ref params, wildcard, ref guard, .. } = pat;
+        let Pattern { params, wildcard, guard, .. } = pat;
 
         let mut args = args.clone();
 
@@ -449,8 +459,6 @@ impl GlobalHandle {
     /// Bind all global variables declared in a script.
     /// Multiple scripts may declare the same global variable.
     pub fn merge_defaults(&self, script: &Script) -> Result<()> {
-        use anyhow::Context;
-
         let mut dict = self.0.write().unwrap();
 
         for (name, default) in script.global_defaults() {
@@ -462,8 +470,9 @@ impl GlobalHandle {
                 None => GlobalValue::Int(0),
 
                 Some(expr) => {
-                    dict.eval_default(expr).with_context(|| {
-                        format!("Evaluating default for ${name}")
+                    dict.eval_default(expr)
+                    .map_err(|err| -> ValueErr {
+                        bail!("{err}: Evaluating default for ${name}")
                     })?
                 },
             };
@@ -477,13 +486,11 @@ impl GlobalHandle {
 
 impl GlobalEnv {
     fn eval_default(&self, expr: &Expr) -> Result<GlobalValue> {
-        use anyhow::anyhow;
-
         match expr {
             &Expr::Int { value } => Ok(GlobalValue::Int(value.into())),
 
             Expr::Global { name } => self.bindings.get(name.as_str()).cloned()
-            .ok_or_else(|| anyhow!("Global ${name} is not yet defined")),
+            .ok_or_else(|| bail!("Global ${name} is not yet defined")),
 
             Expr::Paren { value } => self.eval_default(&value),
 
@@ -493,7 +500,7 @@ impl GlobalEnv {
 }
 
 impl TryFrom<Value> for GlobalValue {
-    type Error = anyhow::Error;
+    type Error = EvalErr;
 
     fn try_from(value: Value) -> Result<Self> {
         match value {
@@ -503,6 +510,12 @@ impl TryFrom<Value> for GlobalValue {
 
             other => bail!("Cannot store {other:?} in a global"),
         }
+    }
+}
+
+impl From<super::value::ValueErr> for EvalErr {
+    fn from(value: super::value::ValueErr) -> Self {
+        todo!("Convert {value}")
     }
 }
 

@@ -1,8 +1,6 @@
 use std::{fmt, sync::Arc};
 use std::iter::Peekable;
 
-use anyhow::{Context, Result, bail};
-
 use super::token::*;
 
 #[derive(Debug, Default, Eq, PartialEq)]
@@ -191,13 +189,68 @@ pub(crate) struct Parser<'src, I: Iterator<Item=Token<'src>>> {
     pub(crate) last_page: Option<Arc<str>>,
 }
 
+#[derive(thiserror::Error, Clone, Debug)]
+#[error("{loc}: {inner}")]
+pub struct SpannedError {
+    pub loc: ErrLocation,
+    pub inner: AstError,
+    pub context: Vec<In>,
+}
+
+#[derive(thiserror::Error, Clone, Debug)]
+pub enum AstError {
+    #[error("Expected {expected}, found {found:?}")]
+    ExpectedTok {
+        expected: Tok,
+        found: Tok,
+    },
+
+    #[error("Expected {expected}, found {found:?}")]
+    ExpectedStr {
+        expected: &'static str,
+        found: Tok,
+    },
+
+    #[error("Unexpected {found}")]
+    UnexpectedTok {
+        found: Tok,
+    },
+
+    #[error("Unexpected end of input")]
+    UnexpectedEof,
+
+    #[error("Multiple wildcards in pattern")]
+    MultipleWildcards,
+
+    #[error("Unknown operator {operator:?}")]
+    UnknownOperator {
+        operator: Tok,
+    },
+
+    #[error("Invalid line comment inside string: {content:?}")]
+    CommentInStr {
+        content: String,
+    },
+
+    #[error("Invalid number literal: {content:?}")]
+    InvalidNumLiteral {
+        content: String,
+    },
+
+    #[error("Unrecognized token: {content:?}")]
+    UnrecognizedToken {
+        content: String,
+    },
+}
+
 #[derive(Copy, Clone, Debug)]
 pub struct ErrLocation {
     pub line: usize,
     pub column: usize,
 }
 
-enum In {
+#[derive(Clone, Debug)]
+pub enum In {
     ScriptHeader,
 
     PageHeader {
@@ -212,6 +265,8 @@ enum In {
         number: usize,
     },
 }
+
+pub type Result<T, E=SpannedError> = std::result::Result<T, E>;
 
 impl<'src, I: Iterator<Item=Token<'src>>> Parser<'src, I> {
     pub(crate) fn parse(mut self) -> Result<Script> {
@@ -254,7 +309,7 @@ impl<'src, I: Iterator<Item=Token<'src>>> Parser<'src, I> {
 
         if expected != tok.kind {
             let loc = self.line_and_column(tok.offset);
-            bail!("{loc}: Expected \"{}\", got {:?}", expected, tok.as_ref());
+            AstError::ExpectedTok { expected, found: tok.kind }.with_loc(loc)?
         }
 
         Ok(())
@@ -264,18 +319,21 @@ impl<'src, I: Iterator<Item=Token<'src>>> Parser<'src, I> {
     /// types that are always invalid.
     fn expect_token(&mut self) -> Result<Token<'src>> {
         let Some(next) = self.input.next() else {
-            bail!("Unexpected end of input");
+            todo!("Location for unexpected EOF")
         };
 
         let loc = self.line_and_column(next.offset);
         let content = next.content;
 
         if let Tok::InvalidComment = &next.kind {
-            bail!("{loc}: Invalid line comment inside string: {content}");
+            let content = content.to_owned();
+            AstError::CommentInStr { content }.with_loc(loc)?
         } else if let Tok::InvalidInt(_) = &next.kind {
-            bail!("{loc}: Invalid number literal: {content}");
+            let content = content.to_owned();
+            AstError::InvalidNumLiteral { content }.with_loc(loc)?
         } else if let Tok::Unrecognized(_) = &next.kind {
-            bail!("{loc}: Unrecognized token: {content:?}");
+            let content = content.to_owned();
+            AstError::UnrecognizedToken { content }.with_loc(loc)?
         }
 
         Ok(next)
@@ -332,7 +390,10 @@ impl<'src, I: Iterator<Item=Token<'src>>> Parser<'src, I> {
                     let next = self.expect_token()?;
                     let Tok::GlobalName(name) = next.kind else {
                         let loc = self.line_and_column(next.offset);
-                        bail!("{loc}: Expected name of global");
+                        AstError::ExpectedStr {
+                            expected: "name of global",
+                            found: next.kind,
+                        }.with_loc(loc)?
                     };
 
                     Decl::Flag { name }
@@ -344,7 +405,10 @@ impl<'src, I: Iterator<Item=Token<'src>>> Parser<'src, I> {
                     let next = self.expect_token()?;
                     let Tok::GlobalName(name) = next.kind else {
                         let loc = self.line_and_column(next.offset);
-                        bail!("{loc}: Expected name of global");
+                        AstError::ExpectedStr {
+                            expected: "name of global",
+                            found: next.kind,
+                        }.with_loc(loc)?
                     };
 
                     self.expect(Tok::LineBreak)?;
@@ -365,10 +429,14 @@ impl<'src, I: Iterator<Item=Token<'src>>> Parser<'src, I> {
                                 self.input.next().unwrap();
                             },
 
-                            _ => {
+                            other => {
                                 let offset = tok.offset;
+                                let found = other.clone();
                                 let loc = self.line_and_column(offset);
-                                bail!("{loc}: Expected atom or semicolons")
+                                AstError::ExpectedStr {
+                                    expected: "atom or semicolons",
+                                    found,
+                                }.with_loc(loc)?
                             },
                         }
                     }
@@ -394,7 +462,10 @@ impl<'src, I: Iterator<Item=Token<'src>>> Parser<'src, I> {
         let loc = self.line_and_column(next.offset);
         match next.kind {
             Tok::Ident(w) => Ok(w.into()),
-            tok => bail!("{loc}: Expected label, got {}", tok),
+            tok => AstError::ExpectedStr {
+                expected: "label",
+                found: tok,
+            }.with_loc(loc),
         }
     }
 
@@ -486,7 +557,10 @@ impl<'src, I: Iterator<Item=Token<'src>>> Parser<'src, I> {
 
                 let Tok::Ident(name) = next.kind else {
                     let loc = self.line_and_column(next.offset);
-                    bail!("{loc}: Expected identifier, got {}", next.kind);
+                    AstError::ExpectedStr {
+                        expected: "identifier",
+                        found: next.kind,
+                    }.with_loc(loc)?
                 };
 
                 self.expect(Tok::Assignment(None))?;
@@ -553,7 +627,7 @@ impl<'src, I: Iterator<Item=Token<'src>>> Parser<'src, I> {
 
             other => {
                 let loc = self.line_and_column(next.offset);
-                bail!("{loc}: Unexpected {}", other)
+                AstError::UnexpectedTok { found: other }.with_loc(loc)?
             },
         })
     }
@@ -575,7 +649,10 @@ impl<'src, I: Iterator<Item=Token<'src>>> Parser<'src, I> {
                         let tok = self.expect_token()?;
 
                         let Tok::Ident(name) = tok.kind else {
-                            bail!("Expected field name");
+                            AstError::ExpectedStr {
+                                expected: "field name",
+                                found: tok.kind,
+                            }.with_loc(loc)?
                         };
 
                         let lhs = lhs.into();
@@ -588,7 +665,7 @@ impl<'src, I: Iterator<Item=Token<'src>>> Parser<'src, I> {
 
                         loop {
                             let Some(next) = self.input.peek() else {
-                                bail!("{loc}: Unexpected end of input");
+                                AstError::UnexpectedEof.with_loc(loc)?
                             };
 
                             if let Tok::ParenClose = &next.kind {
@@ -609,7 +686,9 @@ impl<'src, I: Iterator<Item=Token<'src>>> Parser<'src, I> {
                         Expr::FnCall { lhs, args }
                     },
 
-                    other => bail!("{loc}: Unrecognized operator {}", other),
+                    other => {
+                        AstError::UnknownOperator { operator: other }.with_loc(loc)?
+                    },
                 };
             } else if let Some((lbp, rbp)) = self.peek_infix_power() {
                 if lbp < min_bp {
@@ -638,7 +717,7 @@ impl<'src, I: Iterator<Item=Token<'src>>> Parser<'src, I> {
 
                     other => {
                         let loc = self.line_and_column(tok.offset);
-                        bail!("{loc}: Unknown operator {:?}", other)
+                        AstError::UnknownOperator { operator: other }.with_loc(loc)?
                     },
                 };
             } else {
@@ -660,7 +739,7 @@ impl<'src, I: Iterator<Item=Token<'src>>> Parser<'src, I> {
                 Tok::Minus => Expr::Neg { rhs },
                 other => {
                     let loc = self.line_and_column(tok.offset);
-                    bail!("{loc}: Unexpected {:?}", other)
+                    AstError::UnexpectedTok { found: other }.with_loc(loc)?
                 },
             })
         }
@@ -703,7 +782,10 @@ impl<'src, I: Iterator<Item=Token<'src>>> Parser<'src, I> {
 
             _ => {
                 let loc = self.line_and_column(tok.offset);
-                bail!("{loc}: Expected expression, got {}", tok.kind)
+                return AstError::ExpectedStr {
+                    expected: "expression",
+                    found: tok.kind,
+                }.with_loc(loc);
             },
         };
 
@@ -786,7 +868,10 @@ impl<'src, I: Iterator<Item=Token<'src>>> Parser<'src, I> {
 
         let Tok::Atom(variant) = variant.kind else {
             let loc = self.line_and_column(variant.offset);
-            bail!("{loc}: Expected atom, found {}", variant.kind);
+            return AstError::ExpectedStr {
+                expected: "atom",
+                found: variant.kind,
+            }.with_loc(loc);
         };
 
         let mut params = Vec::new();
@@ -812,7 +897,7 @@ impl<'src, I: Iterator<Item=Token<'src>>> Parser<'src, I> {
                 if tok.kind == Tok::Ellipsis {
                     if wildcard {
                         let loc = self.line_and_column(tok.offset);
-                        bail!("{loc}: Multiple wildcards in pattern");
+                        return AstError::MultipleWildcards.with_loc(loc);
                     }
 
                     wildcard = true;
@@ -821,7 +906,10 @@ impl<'src, I: Iterator<Item=Token<'src>>> Parser<'src, I> {
 
                 let Tok::Ident(name) = &tok.kind else {
                     let loc = self.line_and_column(tok.offset);
-                    bail!("{loc}: Expected identifier, found {}", &tok.kind)
+                    return AstError::ExpectedStr {
+                        expected: "identifier",
+                        found: tok.kind.clone(),
+                    }.with_loc(loc);
                 };
 
                 params.push(name.clone());
@@ -851,7 +939,7 @@ impl<'src, I: Iterator<Item=Token<'src>>> Parser<'src, I> {
 
                 other => {
                     let loc = self.line_and_column(next.offset);
-                    bail!("{loc}: Unexpected {}", other)
+                    return AstError::UnexpectedTok { found: other }.with_loc(loc);
                 },
             }
 
@@ -869,7 +957,7 @@ impl<'src, I: Iterator<Item=Token<'src>>> Parser<'src, I> {
 
                     other => {
                         let loc = self.line_and_column(next.offset);
-                        bail!("{loc}: Unexpected {}", other)
+                        return AstError::UnexpectedTok { found: other }.with_loc(loc);
                     },
                 }
 
@@ -926,7 +1014,7 @@ impl Binop {
 }
 
 impl<L> Expr<L> {
-    pub fn map_locals<M>(self, f: &mut impl FnMut(L) -> Result<M>) -> Result<Expr<M>> {
+    pub fn map_locals<M, E>(self, f: &mut impl FnMut(L) -> Result<M, E>) -> Result<Expr<M>, E> {
         use Expr::*;
 
         Ok(match self {
@@ -970,7 +1058,7 @@ impl<L> Expr<L> {
                 let lhs = lhs.map_locals(f)?.into();
                 let args = args.into_iter().map(|arg| {
                     arg.map_locals(f)
-                }).collect::<Result<Vec<_>>>()?;
+                }).collect::<Result<Vec<_>, _>>()?;
                 FnCall { lhs, args }
             },
         })
@@ -978,7 +1066,7 @@ impl<L> Expr<L> {
 }
 
 impl<L> Splice<L> {
-    pub fn map_exprs<M>(self, f: &mut impl FnMut(Expr<L>) -> Result<Expr<M>>) -> Result<Splice<M>> {
+    pub fn map_exprs<M, E>(self, f: &mut impl FnMut(Expr<L>) -> Result<Expr<M>, E>) -> Result<Splice<M>, E> {
         use Splice::*;
 
         Ok(match self {
@@ -992,9 +1080,15 @@ impl<L> Splice<L> {
     }
 }
 
+impl AstError {
+    pub fn with_loc<T>(self, loc: ErrLocation) -> Result<T> {
+        Err(SpannedError { loc, inner: self, context: vec![] })
+    }
+}
+
 impl In {
     fn try_parse<T>(self, mut f: impl FnMut() -> Result<T>) -> Result<T> {
-        f().with_context(move || self)
+        f().map_err(|mut e| { e.context.push(self); e })
     }
 }
 

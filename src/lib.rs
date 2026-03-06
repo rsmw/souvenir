@@ -7,7 +7,7 @@ pub mod eval;
 pub mod value;
 pub mod interpret;
 
-pub fn parse(input: &str) -> anyhow::Result<ast::Script> {
+pub fn parse(input: &str) -> ast::Result<ast::Script> {
     ast::Parser {
         src: input,
         input: token::Lexer::new(input).skip_whitespace().peekable(),

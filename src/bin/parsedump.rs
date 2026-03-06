@@ -1,10 +1,8 @@
 //! Debugging tool. Reads stdin, parses, and dumps to stdout.
 
-use std::io::stdin;
+use std::{error::Error, io::stdin};
 
-use anyhow::Result;
-
-fn main() -> Result<()> {
+fn main() -> Result<(), Box<dyn Error>> {
     let mut input = String::new();
 
     for line in stdin().lines() {

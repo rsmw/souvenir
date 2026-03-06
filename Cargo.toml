@@ -5,9 +5,7 @@ edition = "2021"
 resolver = "2"
 
 [dependencies]
-anyhow = "1"
+thiserror = "1"
 log = "0.4.20"
 stderrlog = "0.5"
 
-[dev-dependencies]
-anyhow = { version = "1", features = ["backtrace"] }
